@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG 个人知识库助手 · 实验1</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ 侧边栏 ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">R</div>
+      <div>
+        <div class="brand-name">RAG 知识库助手</div>
+        <div class="brand-sub">大模型基础与提示词工程 · 实验1</div>
+      </div>
+    </div>
+
+    <section class="card">
+      <div class="card-title"><span class="dot dot-indigo"></span>知识库</div>
+      <div id="kb-empty" class="kb-empty">尚未建库，点击下方按钮</div>
+      <div id="kb-stats" class="kb-stats hidden">
+        <div class="stat"><b id="kb-docs">0</b><span>文档</span></div>
+        <div class="stat"><b id="kb-chunks">0</b><span>片段</span></div>
+        <div class="stat"><b id="kb-k">3</b><span>Top-K</span></div>
+      </div>
+      <ul id="kb-sources" class="kb-sources"></ul>
+      <div class="kb-actions">
+        <button id="btn-index" class="btn btn-primary">⚡ 建立 / 重建知识库</button>
+        <button id="btn-add-file" class="btn btn-ghost">📚 新增资料</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span class="dot dot-teal"></span>当前会话</div>
+      <div class="kv"><span>会话 ID</span><code id="session-id">—</code></div>
+      <div class="kv"><span>历史消息</span><b id="history-len">0 条</b></div>
+      <div class="kv"><span>问答模式</span><b id="mode-label">rag</b></div>
+      <button id="btn-new" class="btn btn-ghost btn-block">＋ 新建会话（/new）</button>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span class="dot dot-amber"></span>检索参数</div>
+      <div class="mode-switch">
+        <button class="mode-btn active" data-mode="rag">RAG 检索增强</button>
+        <button class="mode-btn" data-mode="direct">Direct 直接问</button>
+      </div>
+      <label class="slider-label">Top-K：<b id="k-value">3</b></label>
+      <input type="range" id="k-slider" min="1" max="6" value="3">
+      <p class="hint">切换模式或 K 值会开启新会话（与命令行 /mode、/k 一致）</p>
+    </section>
+
+    <div class="sidebar-foot">
+      <span id="model-name" class="model-tag">model</span>
+      <button id="btn-key" class="btn btn-ghost btn-sm">🔑 API 密钥</button>
+    </div>
+  </aside>
+
+  <!-- ============ 主区域 ============ -->
+  <main class="main">
+    <nav class="tabs">
+      <button class="tab active" data-tab="chat">💬 对话问答</button>
+      <button class="tab" data-tab="search">🔍 检索测试</button>
+      <button class="tab" data-tab="compare">⚖️ 对照实验</button>
+      <button class="tab" data-tab="files">📚 资料管理</button>
+      <button class="tab" data-tab="guide">📖 实验指南</button>
+      <span class="tabs-right">
+        <span id="status-pill" class="pill">就绪</span>
+        <button id="btn-theme" class="icon-btn" title="切换深色 / 浅色">🌙</button>
+      </span>
+    </nav>
+
+    <!-- 对话 -->
+    <section id="tab-chat" class="panel active">
+      <div id="mode-banner" class="mode-banner hidden">⚠️ 当前为 <b>Direct</b> 模式：不检索知识库，回答只能来自模型自身知识，建议切回 RAG 模式做正式实验。</div>
+      <div id="chat-list" class="chat-list">
+        <div class="welcome">
+          <div class="welcome-logo">✦</div>
+          <h2>你好，我是你的个人资料助手</h2>
+          <p>先在左侧「建立知识库」，然后向我提问。<br>我只会依据知识库资料回答，并标注来源编号。</p>
+          <div class="welcome-chips">
+            <button class="chip-q">普通图书最多同时借阅几本、借多久？</button>
+            <button class="chip-q">读书会什么时候举行？</button>
+            <button class="chip-q">活动的收费标准是多少？</button>
+          </div>
+        </div>
+      </div>
+      <div class="composer">
+        <input id="chat-input" type="text" placeholder="输入你的问题，Enter 发送…" autocomplete="off">
+        <button id="btn-send" class="btn btn-primary">发送 ➤</button>
+      </div>
+    </section>
+
+    <!-- 检索 -->
+    <section id="tab-search" class="panel">
+      <div class="panel-head">
+        <h3>检索测试 <span class="sub">对应命令 /search —— 只看检索结果，不生成回答</span></h3>
+      </div>
+      <div class="search-bar">
+        <input id="search-input" type="text" placeholder="输入完整问题，例如：普通图书最多同时借阅几本、借多久？">
+        <button id="btn-search" class="btn btn-primary">检索</button>
+      </div>
+      <div id="search-results" class="search-results"></div>
+    </section>
+
+    <!-- 对照 -->
+    <section id="tab-compare" class="panel">
+      <div class="panel-head">
+        <h3>Direct / RAG 对照实验 <span class="sub">对应任务4：同一问题两种模式各答一次</span></h3>
+      </div>
+      <div class="search-bar">
+        <select id="compare-select"><option value="">—— 从 questions.csv 选择题目 ——</option></select>
+        <input id="compare-input" type="text" placeholder="或输入自定义问题">
+        <button id="btn-compare" class="btn btn-primary">开始对照</button>
+      </div>
+      <div id="compare-results" class="compare-grid"></div>
+    </section>
+
+    <!-- 资料管理 -->
+    <section id="tab-files" class="panel">
+      <div class="panel-head">
+        <h3>资料管理 <span class="sub">往 data 文件夹新增 / 删除资料，改完记得重建知识库</span></h3>
+      </div>
+      <div class="files-grid">
+        <div class="files-col">
+          <div class="files-card">
+            <h4>📤 上传本地文件</h4>
+            <p class="hint">支持 .md / .txt（UTF-8）与 .docx（自动抽取正文）。文件会被复制进 data 文件夹。</p>
+            <label class="upload-drop" id="upload-drop">
+              <input type="file" id="file-input" accept=".md,.txt,.docx" hidden>
+              <span id="upload-hint">点击选择文件，或把文件拖到这里</span>
+            </label>
+            <button id="btn-upload" class="btn btn-primary btn-block">上传并加入知识库</button>
+          </div>
+          <div class="files-card">
+            <h4>✍️ 直接写一份新资料</h4>
+            <input id="new-title" type="text" placeholder="标题，例如：会员权益说明">
+            <textarea id="new-content" rows="7" placeholder="在这里写正文。第一行可以是 # 标题。"></textarea>
+            <button id="btn-create" class="btn btn-primary btn-block">保存到知识库</button>
+          </div>
+        </div>
+        <div class="files-col">
+          <div class="files-card">
+            <h4>📄 当前资料（data 文件夹）</h4>
+            <div id="file-list" class="file-list"></div>
+            <button id="btn-reindex" class="btn btn-ghost btn-block">🔄 保存后重建知识库（/index）</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 指南 -->
+    <section id="tab-guide" class="panel">
+      <div class="panel-head"><h3>实验指南</h3></div>
+      <div class="guide-grid">
+        <div class="guide-card"><b>任务1 建库</b><p>点击左侧「建立知识库」，应看到 文档 3 份 / 片段 6 条，并生成 index.json。</p></div>
+        <div class="guide-card"><b>任务2 检索</b><p>在「检索测试」中提问，检查 score 是否从高到低排序、片段是否命中关键信息。</p></div>
+        <div class="guide-card"><b>任务3 问答</b><p>在「对话问答」中提问，回答应依据资料并标注来源编号，可展开查看本轮 messages。</p></div>
+        <div class="guide-card"><b>任务4 对照</b><p>在「对照实验」中对 10 道题分别跑 direct 与 rag，比较准确性与拒答差异。</p></div>
+        <div class="guide-card"><b>任务5 多轮</b><p>连续追问后查看历史消息条数；点「新建会话」后 session_id 变化、旧上下文清空。</p></div>
+        <div class="guide-card"><b>任务6 改进</b><p>调整 Top-K 滑块（或改 SYSTEM_PROMPT），改动前后测同样题目并写改进说明。</p></div>
+      </div>
+      <div class="panel-head" style="margin-top:22px"><h3>运行日志</h3></div>
+      <div class="search-bar">
+        <select id="log-select"><option value="">—— 选择日志文件 ——</option></select>
+        <button id="btn-log" class="btn btn-ghost">查看</button>
+      </div>
+      <pre id="log-view" class="log-view hidden"></pre>
+    </section>
+  </main>
+</div>
+
+<!-- 密钥弹窗 -->
+<div id="key-modal" class="modal hidden">
+  <div class="modal-box">
+    <h3>设置 API 密钥</h3>
+    <p class="hint">与命令行启动时输入的密钥相同；本地模拟服务任意非空密钥即可。</p>
+    <input id="key-chat" type="password" placeholder="对话 API Key">
+    <input id="key-embed" type="password" placeholder="嵌入 API Key（留空则与对话相同）">
+    <div class="modal-actions">
+      <button id="key-cancel" class="btn btn-ghost">取消</button>
+      <button id="key-save" class="btn btn-primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>
